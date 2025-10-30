@@ -1,48 +1,26 @@
 \
-#ifndef JUEGO_H
-#define JUEGO_H
+#ifndef COLORETTO_JUGADOR_H
+#define COLORETTO_JUGADOR_H
 
 #include <vector>
 #include <string>
-#include "Jugador.h"
 
-enum class Fase { COLOCACION, ROBO };
-
-struct Pila {
-    std::vector<int> cartas; // ids
-    bool robada;
-    Pila(): robada(false) {}
-};
-
-class Juego {
+class Jugador {
 public:
-    Juego();
-    ~Juego();
-    void inicializarPartida(const std::vector<std::string>& nombres);
-    void iniciar(); 
-    bool guardar(const std::string& archivo) const;
-    bool cargar(const std::string& archivo);
-    void mostrarInstrucciones() const;
-    void mostrarTablaPuntos() const;
+    Jugador() = default;
+    Jugador(const std::string& nombre);
+    ~Jugador();
+    void agregarCarta(int color);
+    void agregarCartas(const std::vector<int>& cols);
+    const std::string& obtenerNombre() const;
+    const std::vector<int>& obtenerCartas() const;
+    int puntaje() const;
+    // serializacion
+    std::string serializar() const;
+    bool deserializar(const std::string& datos);
 private:
-    Jugador** jugadores; // arreglo dinamico de punteros
-    int numJugadores;
-    Pila* pilas; // arreglo dinamico de pilas
-    int numPilas;
-    int jugadorActual;
-    bool ultimaRondaRevelada;
-    Fase faseActual;
-    std::vector<int>* mazo; // Usamos memoria dinamica para el mazo
-    void limpiar_memoria();
-    void prepararMazoSegunModo();
-    int contarTotalCartasSegunModo() const;
-    void insertarUltimaRondaSegunModo();
-    void mostrarTablero() const;
-    bool hayPilaConCartas() const;
-    void robarYColocar();
-    void tomarPila();
-    void iniciarNuevaRonda();
-    void mostrarResultadosFinales() const;
+    std::string nombre;
+    std::vector<int> cartas; // ids de color recogidas (+2 as 100)
 };
 
-#endif // JUEGO_H
+#endif // COLORETTO_JUGADOR_H
