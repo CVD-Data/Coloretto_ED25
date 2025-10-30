@@ -1,16 +1,15 @@
 \
-#ifndef COLORETTO_JUEGO_H
-#define COLORETTO_JUEGO_H
+#ifndef JUEGO_H
+#define JUEGO_H
 
 #include <vector>
 #include <string>
-//#include "jugador.h"
-//#include "mazo.h"
+#include "Jugador.h"
 
-enum class Fase { COLOCACION = 0, ROBO = 1 };
+enum class Fase { COLOCACION, ROBO };
 
 struct Pila {
-    std::vector<int> cartas; // ids de color o especiales
+    std::vector<int> cartas; // ids
     bool robada;
     Pila(): robada(false) {}
 };
@@ -19,38 +18,31 @@ class Juego {
 public:
     Juego();
     ~Juego();
-    void nuevaPartida(const std::vector<std::string>& nombresJugadores);
-    void bucleJuego();
-    bool guardar(const std::string& nombreArchivo) const;
-    bool cargar(const std::string& nombreArchivo);
+    void inicializarPartida(const std::vector<std::string>& nombres);
+    void iniciar(); 
+    bool guardar(const std::string& archivo) const;
+    bool cargar(const std::string& archivo);
     void mostrarInstrucciones() const;
+    void mostrarTablaPuntos() const;
 private:
-    std::vector<Jugador*> jugadores; // punteros dinámicos
-    Mazo* mazo; // puntero dinámico al mazo
-    Pila* pilas; // arreglo dinámico de Pila
+    Jugador** jugadores; // arreglo dinamico de punteros
+    int numJugadores;
+    Pila* pilas; // arreglo dinamico de pilas
     int numPilas;
     int jugadorActual;
-    int cartasRobadasEstaRonda;
     bool ultimaRondaRevelada;
     Fase faseActual;
-    static const int MAX_PILAS = 3;
-    static const int MAX_CARTAS_PILA = 3;
-    void limpiarMemoria();
-    void mostrarEstado() const;
-    void siguienteJugador();
-    bool todasPilasRobadas() const;
-    bool todasPilasLlenas() const;
-    std::string colorPorId(int id) const;
-    std::string simboloPorId(int id) const;
-    std::string resetColor() const { return "\033[0m"; }
-    void animacionRobar() const;
-    void animacionAdvertencia(const std::string& msg) const;
-    void animacionFaseRobo() const; // arcoiris suave
-    void animacionUltimaRonda() const; // dorado
-    void animacionFinal() const;
+    std::vector<int>* mazo; // Usamos memoria dinamica para el mazo
+    void limpiar_memoria();
+    void prepararMazoSegunModo();
+    int contarTotalCartasSegunModo() const;
+    void insertarUltimaRondaSegunModo();
+    void mostrarTablero() const;
+    bool hayPilaConCartas() const;
+    void robarYColocar();
+    void tomarPila();
     void iniciarNuevaRonda();
-    void forzarFaseRoboSiCorresponde();
-    int numJugadoresEnPartida() const;
+    void mostrarResultadosFinales() const;
 };
 
-#endif // COLORETTO_JUEGO_H
+#endif // JUEGO_H

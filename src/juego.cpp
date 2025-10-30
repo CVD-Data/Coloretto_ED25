@@ -1,377 +1,426 @@
 \
-#include "juego.h"
+#include "Juego.h"
+#include "Utilidades.h"
 #include <iostream>
+#include <algorithm>
+#include <random>
+#include <chrono>
 #include <fstream>
 #include <sstream>
-#include <thread>
-#include <chrono>
+#include <string>
 
-Juego::Juego(): mazo(nullptr), pilas(nullptr), numPilas(MAX_PILAS), jugadorActual(0), cartasRobadasEstaRonda(0), ultimaRondaRevelada(false), faseActual(Fase::COLOCACION) {
-    pilas = new Pila[numPilas];
-}
+Juego::Juego(): jugadores(nullptr), numJugadores(0), pilas(nullptr), numPilas(3),
+    jugadorActual(0), ultimaRondaRevelada(false), faseActual(Fase::COLOCACION), mazo(nullptr) {}
 
 Juego::~Juego() {
-    limpiarMemoria();
-    if (pilas) delete[] pilas;
+    limpiar_memoria();
 }
 
-void Juego::limpiarMemoria() {
-    for (Jugador* p : jugadores) delete p;
-    jugadores.clear();
+void Juego::limpiar_memoria() {
+    if (jugadores) {
+        for (int i=0;i<numJugadores;++i) delete jugadores[i];
+        delete[] jugadores; jugadores = nullptr;
+    }
+    if (pilas) { delete[] pilas; pilas = nullptr; }
     if (mazo) { delete mazo; mazo = nullptr; }
-}
-
-int Juego::numJugadoresEnPartida() const {
-    return (int)jugadores.size();
-}
-
-void Juego::nuevaPartida(const std::vector<std::string>& nombresJugadores) {
-    limpiarMemoria();
-    for (const auto &n : nombresJugadores) jugadores.push_back(new Jugador(n));
-    int nj = numJugadoresEnPartida();
-    mazo = new Mazo(nj);
-    for (int i=0;i<numPilas;++i) { pilas[i].cartas.clear(); pilas[i].robada = false; }
+    numJugadores = 0;
     jugadorActual = 0;
-    cartasRobadasEstaRonda = 0;
     ultimaRondaRevelada = false;
     faseActual = Fase::COLOCACION;
 }
 
-std::string Juego::colorPorId(int id) const {
-    switch(id) {
-        case 0: return "\033[31m"; // rojo
-        case 1: return "\033[32m"; // verde
-        case 2: return "\033[34m"; // azul
-        case 3: return "\033[33m"; // amarillo
-        case 4: return "\033[35m"; // magenta
-        case 5: return "\033[36m"; // cyan
-        case 6: return "\033[37m"; // blanco
-        case 100: return "\033[1;33m"; // +2 - dorado
-        case 99: return "\033[1;33m"; // ultima ronda - dorado
-        default: return "\033[0m";
+int Juego::contarTotalCartasSegunModo() const {
+    if (numJugadores == 3) return 56;
+    if (numJugadores == 4) return 65;
+    return 74;
+}
+
+void Juego::prepararMazoSegunModo() {
+    if (mazo) { delete mazo; mazo = nullptr; }
+    mazo = new std::vector<int>();
+    int numColores = (numJugadores==3?5:(numJugadores==4?6:7));
+    for (int c=0;c<numColores;++c) {
+        for (int i=0;i<9;++i) mazo->push_back(c);
     }
+    // barajar
+    unsigned seed = (unsigned)std::chrono::system_clock::now().time_since_epoch().count();
+    std::shuffle(mazo->begin(), mazo->end(), std::default_random_engine(seed));
 }
 
-std::string Juego::simboloPorId(int id) const {
-    if (id == 100) return "+2";
-    if (id == 99) return "★";
-    return "■";
+// void Juego::insertarUltimaRondaSegunModo() {
+//     // Ahora esta función no inserta la carta al inicio. La lógica para añadir la carta de última
+//     // ronda ocurre dinámicamente durante el juego cuando queden exactamente 5 cartas en el mazo.
+// }
+
+void Juego::inicializarPartida(const std::vector<std::string>& nombres) {
+    limpiar_memoria();
+    numJugadores = (int)nombres.size();
+    jugadores = new Jugador*[numJugadores];
+    for (int i=0;i<numJugadores;++i) jugadores[i] = new Jugador(nombres[i]);
+    numPilas = 3;
+    pilas = new Pila[numPilas];
+    jugadorActual = 0;
+    ultimaRondaRevelada = false;
+    faseActual = Fase::COLOCACION;
+    prepararMazoSegunModo();
 }
 
-void Juego::animacionRobar() const {
-    for (int i=0;i<3;++i) { std::cout << "."; std::this_thread::sleep_for(std::chrono::milliseconds(160)); }
-    std::cout << "\n";
+void Juego::mostrarInstrucciones() const {
+    limpiarPantalla();
+    std::cout << "\033[1mINSTRUCCIONES - COLORETTO (CONSOLA)\033[0m\n\n";
+    std::cout << "Reglas principales (versión simplificada):\n";
+    std::cout << "- 3 a 5 jugadores. No se muestra la cantidad de cartas del mazo.\n";
+    std::cout << "- Hay 3 pilas. Cada pila admite máximo 3 cartas.\n";
+    std::cout << "- En tu turno puedes robar una carta y colocarla en una pila, o tomar una pila.\n";
+    std::cout << "- Si se roba la carta de Última Ronda (★), se completa la ronda actual y luego finaliza el juego.\n";
+    std::cout << "- Tabla de puntuación disponible en el menú.\n";
+    pausa();
 }
 
-void Juego::animacionAdvertencia(const std::string& msg) const {
-    for (int i=0;i<3;++i) {
-        std::cout << "\033[31m" << msg << "\033[0m\r";
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(220));
-        std::cout << "                                                  \r";
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(120));
-    }
-    std::cout << msg << "\n";
+void Juego::mostrarTablaPuntos() const {
+    limpiarPantalla();
+    std::cout << "\033[36mTabla de Puntos:\033[0m\n\n";
+    std::cout << "| Cartas del mismo color | Puntos obtenidos o perdidos |\n";
+    std::cout << "| ---------------------- | --------------------------- |\n";
+    std::cout << "| 1 carta                | ±1 punto                    |\n";
+    std::cout << "| 2 cartas               | ±3 puntos                   |\n";
+    std::cout << "| 3 cartas               | ±6 puntos                   |\n";
+    std::cout << "| 4 cartas               | ±10 puntos                  |\n";
+    std::cout << "| 5 cartas               | ±15 puntos                  |\n";
+    std::cout << "| 6 cartas               | ±21 puntos                  |\n";
+    std::cout << "| 7 o más cartas         | ±28 puntos                  |\n";
+    pausa();
 }
 
-void Juego::animacionFaseRobo() const {
-    const std::vector<std::string> cols = { "\033[31m", "\033[35m", "\033[34m", "\033[36m", "\033[32m", "\033[33m", "\033[37m" };
-    std::string msg = "🌈 Todas las pilas están llenas. Es momento de tomar una pila.";
-    for (int turn=0; turn<8; ++turn) {
-        std::string c = cols[turn % cols.size()];
-        std::cout << c << msg << resetColor() << "\r";
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(160));
-    }
-    std::cout << "\n";
-}
-
-void Juego::animacionUltimaRonda() const {
-    const std::vector<std::string> cols = { "\033[1;33m", "\033[37m", "\033[36m", "\033[35m" };
-    std::string lines[] = {
-        "🏁  ¡HAS ROBADO LA CARTA DE ÚLTIMA RONDA!  🏁",
-        "✨  Esta es la última ronda del juego.  ✨",
-        "💫  Juega hasta que todos tomen una pila.  💫"
-    };
-    for (int i=0;i<8;++i) {
-        std::string c = cols[i % cols.size()];
-        std::cout << c;
-        for (auto &ln : lines) std::cout << ln << "\n";
-        std::cout << resetColor();
-        std::this_thread::sleep_for(std::chrono::milliseconds(220));
-        std::cout << "\033[2J\033[H";
-    }
-    // print final once
-    std::cout << "\033[1;33m🏁  ¡HAS ROBADO LA CARTA DE ÚLTIMA RONDA!  🏁\033[0m\n";
-    std::cout << "\033[1;33m✨  Esta es la última ronda del juego.  ✨\033[0m\n";
-    std::cout << "\033[1;33m💫  Juega hasta que todos tomen una pila.  💫\033[0m\n";
-}
-
-void Juego::animacionFinal() const {
-    const std::vector<std::string> cols = { "\033[38;5;190m", "\033[38;5;226m", "\033[38;5;45m", "\033[38;5;200m" };
-    std::string texto = "🏆  ¡FIN DEL JUEGO!  🎉\nGracias por jugar Coloretto 🌈";
-    for (int i=0;i<10;++i) {
-        std::string c = cols[i % cols.size()];
-        std::cout << c << texto << resetColor() << "\r";
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(220));
-    }
-    std::cout << "\n\033[1;37mHasta la próxima ronda... 👋\033[0m\n";
-}
-
-void Juego::mostrarEstado() const {
-    std::cout << "\n\033[1m--- TABLERO ---\033[0m\n";
-    std::cout << "Mazo restante: " << (mazo ? mazo->restantes() : 0) << (ultimaRondaRevelada ? " (Última Ronda activada)" : "") << "\n\n";
+void Juego::mostrarTablero() const {
+    limpiarPantalla();
+    std::cout << "\033[1m--- TABLERO ---\033[0m\n";
+    if (ultimaRondaRevelada) std::cout << "\033[1;33m(Última Ronda activada)\033[0m\n";
     for (int i=0;i<numPilas;++i) {
         if (pilas[i].robada) {
-            std::cout << "\033[90mPila " << i << " [ROBADА] ";
-            for (int c : pilas[i].cartas) std::cout << colorPorId(c) << simboloPorId(c) << resetColor() << " ";
-            std::cout << resetColor() << "\n";
-        } else {
-            std::cout << "\033[4mPila " << i << ":\033[0m ";
-            if (pilas[i].cartas.empty()) std::cout << "(vacía)";
-            else for (int c : pilas[i].cartas) std::cout << colorPorId(c) << simboloPorId(c) << resetColor() << " ";
+            std::cout << "\033[90mPila " << i << " [ROBADA] ";
+            for (int id : pilas[i].cartas) std::cout << color_por_id(id) << (id==99? "★" : "■") << reset_color() << " ";
             std::cout << "\n";
+        } else {
+            std::cout << "Pila " << i << ": ";
+            if (pilas[i].cartas.empty()) std::cout << "(vacía)\n";
+            else {
+                for (int id : pilas[i].cartas) std::cout << color_por_id(id) << (id==99? "★" : "■") << reset_color() << " ";
+                std::cout << "\n";
+            }
         }
     }
-    std::cout << "\n\033[1mJugadores:\033[0m\n";
-    for (size_t i=0;i<jugadores.size();++i) {
-        std::cout << (i==jugadorActual ? "-> " : "   ");
-        std::cout << i << ") " << jugadores[i]->obtenerNombre() << " - ";
-        for (int c : jugadores[i]->obtenerCartas()) std::cout << colorPorId(c) << simboloPorId(c) << resetColor() << " ";
-        std::cout << " | Puntaje (simple): " << jugadores[i]->puntaje();
-        if (i==jugadorActual) std::cout << " \033[33m(Tu turno)\033[0m";
-        std::cout << "\n";
+    std::cout << "\nJugadores:\n";
+    for (int i=0;i<numJugadores;++i) {
+        std::cout << i << ") " << jugadores[i]->nombre() << " - Puntaje parcial: " << jugadores[i]->puntaje() << (i==jugadorActual? " <- Tu turno":"") << "\n";
     }
     std::cout << "\n";
 }
 
-void Juego::siguienteJugador() {
-    if (!jugadores.empty()) jugadorActual = (jugadorActual + 1) % (int)jugadores.size();
+bool Juego::hayPilaConCartas() const {
+    for (int i=0;i<numPilas;++i) if (!pilas[i].cartas.empty() && !pilas[i].robada) return true;
+    return false;
 }
 
-bool Juego::todasPilasRobadas() const {
-    for (int i=0;i<numPilas;++i) if (!pilas[i].robada) return false;
-    return true;
+void Juego::robarYColocar() {
+    if (!mazo || mazo -> empty()) {
+        mostrarResultadosFinales();
+        return;
+    }
+    int carta = mazo->back();
+    mazo -> pop_back();
+    if (!ultimaRondaRevelada && mazo && (int)mazo->size() == 5) {
+        bool tiene99 = false;
+        for (int v : *mazo) if (v == 99) { tiene99 = true; break; }
+        if (!tiene99) {
+            int idx = std::rand() % (int)mazo->size();
+            (*mazo)[idx] = 99;
+        }
+    }
+    if (carta == 99 && !ultimaRondaRevelada) {
+        ultimaRondaRevelada = true;
+        limpiarPantalla();
+        std::cout << "\033[1;33m¡HAS ROBADO LA CARTA DE ÚLTIMA RONDA! Se completará la ronda actual.\033[0m\n";
+        pausa();
+    }
+    limpiarPantalla();
+    std::cout << "Carta robada: " << color_por_id(carta) << (carta==99? "★" : "■") << reset_color() << "\n";
+    while (true) {
+        std::cout << "¿En qué pila colocarla (0-" << (numPilas-1) << ")? ";
+        int p;
+
+        if (!(std::cin >> p)) {
+            std::cin.clear(); 
+            std::string tmp; 
+            std::getline(std::cin,tmp); 
+            limpiarPantalla(); 
+            std::cout << "\033[31mDato inválido.\033[0m\n"; 
+            continue;
+        }
+        if (p < 0 || p >= numPilas) { 
+            limpiarPantalla(); 
+            std::cout << "\033[31mPila inválida.\033[0m\n"; 
+            continue; 
+        }
+
+        if (pilas[p].robada) { 
+            limpiarPantalla(); 
+            std::cout << "\033[31mNo se puede colocar en una pila robada.\033[0m\n"; 
+            continue; 
+        }
+
+        if ((int)pilas[p].cartas.size() >= 3) { 
+            limpiarPantalla(); 
+            std::cout << "\033[31mLa pila está llena (máximo 3).\033[0m\n"; 
+            continue; 
+        }
+        pilas[p].cartas.push_back(carta);
+        break;
+    }
+    // si todas las pilas (no robadas) están llenas comienza OBLIGAO la fase de robo
+    
+    bool todasLlenas=true;
+    for (int i=0;i<numPilas;++i) if ((int)pilas[i].cartas.size() < 3 && !pilas[i].robada) { 
+        todasLlenas=false; 
+        break; 
+    }
+    if (todasLlenas) faseActual = Fase::ROBO;
 }
 
-bool Juego::todasPilasLlenas() const {
-    for (int i=0;i<numPilas;++i) if ((int)pilas[i].cartas.size() < MAX_CARTAS_PILA && !pilas[i].robada) return false;
-    return true;
-}
+void Juego::tomarPila() {
+    if (!hayPilaConCartas()) {
+        limpiarPantalla();
+        std::cout << "\033[31mTodas las pilas están vacías, por favor robar una carta.\033[0m\n";
+        pausa();
+        return;
+    }
+    while (true) {
+        std::cout << "¿Qué pila tomar (0-" << (numPilas-1) << ")? ";
+        int p;
+        if (!(std::cin >> p)) { 
+            std::cin.clear(); 
+            std::string tmp; 
+            std::getline(std::cin,tmp); 
+            limpiarPantalla(); 
+            std::cout << "\033[31mDato inválido.\033[0m\n"; 
+            continue; 
+        }
+        if (p < 0 || p >= numPilas) { 
+            limpiarPantalla(); 
+            std::cout << "\033[31mPila inválida.\033[0m\n"; 
+            continue; 
+        }
+        if (pilas[p].robada) { 
+            limpiarPantalla(); 
+            std::cout << "\033[31mEsa pila ya fue robada.\033[0m\n"; 
+            continue; 
+        }
+        if (pilas[p].cartas.empty()) {
+            limpiarPantalla();
+            std::cout << "\033[31mNo se puede tomar una pila vacía.\033[0m\n";
+            if (hayPilaConCartas()) { std::cout << "Por favor elige otra pila.\n"; continue; }
+            else { std::cout << "No hay pilas con cartas. Volviendo al menú principal.\n"; pausa(); return; }
+        }
+        // dar cartas al jugador actual
 
-void Juego::forzarFaseRoboSiCorresponde() {
-    if (faseActual == Fase::COLOCACION && todasPilasLlenas()) {
-        faseActual = Fase::ROBO;
-        animacionFaseRobo();
+        jugadores[jugadorActual] -> agregarCartas(pilas[p].cartas);
+        pilas[p].cartas.clear();
+        pilas[p].robada = true;
+
+        // revisar si todas robadas
+        bool todasRobadas=true;
+        for (int i=0;i<numPilas;++i) if (!pilas[i].robada) { 
+            todasRobadas=false; 
+            break; 
+        }
+        if (todasRobadas) {
+            if (ultimaRondaRevelada) {
+                mostrarResultadosFinales();
+                return;
+            } else {
+                iniciarNuevaRonda();
+            }
+        }
+        break;
     }
 }
 
 void Juego::iniciarNuevaRonda() {
-    for (int i=0;i<numPilas;++i) {
-        pilas[i].robada = false;
-        pilas[i].cartas.clear();
+    for (int i=0; i < numPilas; ++i){
+        pilas[i].robada=false; 
+        pilas[i].cartas.clear(); 
     }
-    cartasRobadasEstaRonda = 0;
-    if (mazo) mazo->barajar();
     faseActual = Fase::COLOCACION;
-    for (int i=0;i<3;++i) {
-        std::cout << "\033[32m♻️ Comienza una nueva ronda...\033[0m\r";
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        std::cout << "                                \r";
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
-    }
-    std::cout << "\n";
+    limpiarPantalla();
+    std::cout << "\033[32mComienza una nueva ronda...\033[0m\n";
+    pausa();
 }
 
-void Juego::bucleJuego() {
-    bool salir = false;
-    while (!salir) {
-        mostrarEstado();
-        forzarFaseRoboSiCorresponde();
+void Juego::mostrarResultadosFinales() const {
+    limpiarPantalla();
+    std::vector<std::pair<std::string,int>> res;
+    for (int i = 0; i < numJugadores; ++i) res.push_back({jugadores[i]->nombre(), jugadores[i]->puntaje()});
+    std::sort(res.begin(), res.end(), [](const auto &a,const auto &b){ return a.second > b.second; });
+    std::cout << "\033[1m=== RESULTADOS FINALES ===\033[0m\n\n";
+    for (auto &p : res) std::cout << p.first << " -> " << p.second << " puntos\n";
+    std::cout << "\n\033[1;33m🏆 ¡GANADOR: " << res.front().first << "!\033[0m\n";
+    pausa();    
+    exit(0);
+}
+
+void Juego::iniciar() {
+    while (true) {
+        mostrarTablero();
+        std::cout << "Jugador actual: " << jugadores[jugadorActual]->nombre() << "\n";
         if (faseActual == Fase::COLOCACION) {
-            std::cout << "Opciones:\n1) Robar carta y colocar en pila\n2) Tomar una pila\n3) Guardar partida\n4) Salir al menú principal\nElija: ";
+            std::cout << "Opciones:\n1) Robar carta y colocar\n2) Tomar pila\n3) Guardar partida\n4) Salir al menú principal\nElija: ";
         } else {
             std::cout << "\033[33mFase de robo: debes tomar una pila disponible.\033[0m\n";
-            std::cout << "Opciones:\n2) Tomar una pila\n3) Guardar partida\n4) Salir al menú principal\nElija: ";
+            std::cout << "Opciones:\n2) Tomar pila\n3) Guardar partida\n4) Salir al menú principal\nElija: ";
         }
-
         int opt;
-        if (!(std::cin >> opt)) { std::cin.clear(); std::string tmp; std::getline(std::cin, tmp); animacionAdvertencia("⚠️ Dato inválido. Por favor ingresa un número válido."); continue; }
+        if (!(std::cin >> opt)) {
+            std::cin.clear(); 
+            std::string tmp; 
+            std::getline(std::cin,tmp); 
+            limpiarPantalla(); 
+            std::cout << "\033[31mDato inválido.\033[0m\n"; 
+            continue;
+        }
 
         if (faseActual == Fase::COLOCACION && opt == 1) {
-            if (!mazo) { animacionAdvertencia("⚠️ No hay mazo inicializado."); continue; }
-            std::cout << "Robando";
-            animacionRobar();
-            int carta = mazo->robar();
-            if (carta == -1) {
-                animacionAdvertencia("⚠️ No hay más cartas para robar.");
-                std::cout << "\n\033[1m--- Partida finalizada ---\033[0m\n";
-                for (auto p : jugadores) std::cout << p->obtenerNombre() << " -> " << p->puntaje() << "\n";
-                animacionFinal();
-                return;
-            }
-            // si es carta de ultima ronda
-            if (carta == 99 && !ultimaRondaRevelada) {
-                ultimaRondaRevelada = true;
-                animacionUltimaRonda();
-            }
-            std::cout << "Carta robada: " << colorPorId(carta) << simboloPorId(carta) << resetColor() << " (id " << carta << ")\n";
-            // pedir pila con validacion y permitir reintentos sin perder turno
-            while (true) {
-                std::cout << "¿En qué pila colocarla (0.." << (numPilas-1) << ")? ";
-                int p;
-                if (!(std::cin >> p)) {
-                    std::cin.clear(); std::string tmp; std::getline(std::cin, tmp);
-                    animacionAdvertencia("⚠️ Dato inválido. Por favor ingresa un número válido."); 
-                    continue;
-                }
-                if (p < 0 || p >= numPilas) {
-                    animacionAdvertencia("⚠️ Pila inválida. Intenta de nuevo.");
-                    continue;
-                }
-                if (pilas[p].robada) {
-                    animacionAdvertencia("⚠️ No se puede colocar en una pila robada. Elige otra pila.");
-                    continue;
-                }
-                if ((int)pilas[p].cartas.size() >= MAX_CARTAS_PILA) {
-                    animacionAdvertencia("⚠️ La pila seleccionada está llena (máximo 3 cartas). Elige otra pila.");
-                    continue;
-                }
-                pilas[p].cartas.push_back(carta);
-                std::cout << "Carta colocada.\n";
-                break;
-            }
-            forzarFaseRoboSiCorresponde();
-            siguienteJugador();
+            robarYColocar();
+            jugadorActual = (jugadorActual + 1) % numJugadores;
         } else if (opt == 2) {
-            int p;
-            while (true) {
-                std::cout << "¿Qué pila tomar (0.." << (numPilas-1) << ")? ";
-                if (!(std::cin >> p)) {
-                    std::cin.clear(); std::string tmp; std::getline(std::cin, tmp);
-                    animacionAdvertencia("⚠️ Dato inválido. Por favor ingresa un número válido."); 
-                    continue;
-                }
-                if (p < 0 || p >= numPilas) {
-                    animacionAdvertencia("⚠️ Pila inválida. Intenta de nuevo.");
-                    continue;
-                }
-                if (pilas[p].robada) {
-                    animacionAdvertencia("⚠️ Esa pila ya fue robada. Elige otra pila.");
-                    continue;
-                }
-                if (pilas[p].cartas.empty()) {
-                    animacionAdvertencia("⚠️ No puedes tomar una pila vacía. Elige otra pila.");
-                    continue;
-                }
-                jugadores[jugadorActual]->agregarCartas(pilas[p].cartas);
-                pilas[p].cartas.clear();
-                pilas[p].robada = true;
-                cartasRobadasEstaRonda++;
-                std::cout << "\033[90mPila " << p << " ha sido robada.\033[0m\n";
-                break;
-            }
-            if (todasPilasRobadas()) {
-                // si ultimaRondaRevelada entonces terminar juego después de esta ronda
-                if (ultimaRondaRevelada) {
-                    std::cout << "\n\033[1m--- Ronda finalizada por carta de última ronda ---\033[0m\n";
-                    std::cout << "\033[1mCalculando puntajes finales...\033[0m\n";
-                    for (auto pl : jugadores) std::cout << pl->obtenerNombre() << " -> " << pl->puntaje() << "\n";
-                    animacionFinal();
-                    return;
-                } else {
-                    iniciarNuevaRonda();
-                }
-            } else {
-                if (faseActual == Fase::ROBO) animacionFaseRobo();
-            }
-            siguienteJugador();
+            tomarPila();
+            jugadorActual = (jugadorActual + 1) % numJugadores;
         } else if (opt == 3) {
-            std::string archivo; std::cout << "Nombre de archivo para guardar: "; std::cin >> archivo;
-            if (guardar(archivo)) std::cout << "\033[32mGuardado OK.\033[0m\n"; else std::cout << "\033[31mError guardando.\033[0m\n";
+            std::string archivo; 
+            std::cout << "Nombre archivo para guardar: "; 
+            std::cin >> archivo;
+            if (guardar(archivo)) { 
+                std::cout << "\033[32mGuardado OK.\033[0m\n"; 
+                pausa(); 
+            }
+            else { 
+                std::cout << "\033[31mError guardando.\033[0m\n"; 
+                pausa(); 
+            }
         } else if (opt == 4) {
-            salir = true;
+            limpiarPantalla();
+            return;
         } else {
-            animacionAdvertencia("⚠️ Opción inválida. Ingresa la opción correcta.");
+            limpiarPantalla();
+            std::cout << "\033[31mOpción inválida.\033[0m\n";
         }
     }
 }
 
-bool Juego::guardar(const std::string& nombreArchivo) const {
-    std::ofstream ofs(nombreArchivo, std::ios::trunc);
+std::string xorCrypt(const std::string &input, char key = 'K') {
+    std::string output = input;
+    for (size_t i = 0; i < input.size(); i++) {
+        output[i] = input[i] ^ key;  // XOR con la clave K
+    }
+    return output;
+}
+
+bool Juego::guardar(const std::string& archivo) const {
+    std::ostringstream buffer;
+
+    buffer << (faseActual == Fase::COLOCACION ? 0 : 1) << "\n";
+    buffer << jugadorActual << "\n";
+    buffer << (ultimaRondaRevelada ? 1 : 0) << "\n";
+
+    // Obtenemos datos del mazo
+    for (size_t i = 0; i < mazo->size(); ++i) {
+        if (i) buffer << ",";
+        buffer << (*mazo)[i];
+    }
+    buffer << "\n";
+
+    // Obtenemos datos de las Pilas
+    for (int i = 0; i < numPilas; ++i) {
+        buffer << (pilas[i].robada ? 1 : 0) << "|";
+        for (size_t j = 0; j < pilas[i].cartas.size(); ++j) {
+            if (j) buffer << ",";
+            buffer << pilas[i].cartas[j];
+        }
+        buffer << "\n";
+    }
+    // Obtenemos datos de los Jugadores
+    buffer << numJugadores << "\n";
+    for (int i = 0; i < numJugadores; ++i)
+        buffer << jugadores[i]->serializar() << "\n";
+
+    // Ciframos con el XOR
+    std::string contenidoCodificado = xorCrypt(buffer.str());
+
+    // Guardar en archivo
+    std::ofstream ofs(archivo, std::ios::binary);
     if (!ofs) return false;
-    ofs << (faseActual == Fase::COLOCACION ? 0 : 1) << "\n";
-    ofs << jugadorActual << "\n";
-    ofs << (ultimaRondaRevelada ? 1 : 0) << "\n";
-    ofs << cartasRobadasEstaRonda << "\n";
-    ofs << (mazo ? mazo->serializar() : "") << "\n";
-    for (int i=0;i<numPilas;++i) {
-        ofs << (pilas[i].robada ? 1 : 0) << "|";
-        for (size_t j=0;j<pilas[i].cartas.size();++j) {
-            if (j) ofs << ",";
-            ofs << pilas[i].cartas[j];
-        }
-        ofs << "\n";
-    }
-    ofs << jugadores.size() << "\n";
-    for (Jugador* p : jugadores) ofs << p->serializar() << "\n";
+    ofs << contenidoCodificado;
+    ofs.close();
+
     return true;
 }
 
-bool Juego::cargar(const std::string& nombreArchivo) {
-    std::ifstream ifs(nombreArchivo);
+bool Juego::cargar(const std::string& archivo) {
+    std::ifstream ifs(archivo, std::ios::binary);
     if (!ifs) return false;
+
+    std::ostringstream buffer;
+    buffer << ifs.rdbuf();
+    std::string contenidoCodificado = buffer.str();
+
+    std::string contenidoDecodificado = xorCrypt(contenidoCodificado);
+
+    std::istringstream in(contenidoDecodificado);
     std::string linea;
-    if (!std::getline(ifs, linea)) return false;
-    int fase = std::stoi(linea);
-    faseActual = (fase==0 ? Fase::COLOCACION : Fase::ROBO);
-    if (!std::getline(ifs, linea)) return false;
+
+    if (!std::getline(in, linea)) return false;
+    faseActual = (linea == "0" ? Fase::COLOCACION : Fase::ROBO);
+
+    if (!std::getline(in, linea)) return false;
     jugadorActual = std::stoi(linea);
-    if (!std::getline(ifs, linea)) return false;
+
+    if (!std::getline(in, linea)) return false;
     ultimaRondaRevelada = (std::stoi(linea) != 0);
-    if (!std::getline(ifs, linea)) return false;
-    cartasRobadasEstaRonda = std::stoi(linea);
-    if (!std::getline(ifs, linea)) return false;
-    limpiarMemoria();
-    mazo = new Mazo(); // default to 5 players; try to deserialize rest of cards
-    if (!mazo->deserializar(linea)) return false;
-    for (int i=0;i<numPilas;++i) {
-        if (!std::getline(ifs, linea)) return false;
-        pilas[i].cartas.clear();
-        pilas[i].robada = false;
-        if (linea.empty()) continue;
+
+    // Extraemos el mazo
+    if (!std::getline(in, linea)) return false;
+    if (mazo) { delete mazo; mazo = nullptr; }
+    mazo = new std::vector<int>();
+    std::istringstream ss(linea);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) if (!tok.empty()) mazo->push_back(std::stoi(tok));
+
+    // Extraemos las pilas
+    if (!pilas) pilas = new Pila[numPilas];
+    for (int i = 0; i < numPilas; ++i) {
+        if (!std::getline(in, linea)) return false;
         auto pos = linea.find('|');
-        if (pos==std::string::npos) return false;
-        int r = std::stoi(linea.substr(0,pos));
-        pilas[i].robada = (r!=0);
-        std::string rest = linea.substr(pos+1);
+        if (pos == std::string::npos) return false;
+        pilas[i].robada = (std::stoi(linea.substr(0, pos)) != 0);
+        pilas[i].cartas.clear();
+        std::string rest = linea.substr(pos + 1);
         if (!rest.empty()) {
-            std::istringstream ss(rest);
-            std::string tok;
-            while (std::getline(ss, tok, ',')) pilas[i].cartas.push_back(std::stoi(tok));
+            std::istringstream ss2(rest); std::string t2;
+            while (std::getline(ss2, t2, ',')) if (!t2.empty()) pilas[i].cartas.push_back(std::stoi(t2));
         }
     }
-    if (!std::getline(ifs, linea)) return false;
-    int numJug = std::stoi(linea);
-    jugadores.clear();
-    for (int i=0;i<numJug;++i) {
-        if (!std::getline(ifs, linea)) return false;
-        Jugador* p = new Jugador();
-        if (!p->deserializar(linea)) { delete p; return false; }
-        jugadores.push_back(p);
-    }
-    return true;
-}
 
-void Juego::mostrarInstrucciones() const {
-    std::cout << "\n\033[1m=== INSTRUCCIONES ===\033[0m\n";
-    std::cout << "- Soporta 3-5 jugadores.\n";
-    std::cout << "- Pilas: máximo 3 cartas.\n";
-    std::cout << "- Cuando se roba la carta de última ronda (★) se completa la ronda actual y luego el juego finaliza.\n";
-    std::cout << "- Guardar / cargar incluye la fase y si la última ronda fue revelada.\n";
-    std::cout << "Presiona Enter para continuar..."; std::cin.ignore(); std::cin.get();
+    // Extraemos los jugadores
+    if (!std::getline(in, linea)) return false;
+    int nj = std::stoi(linea);
+    if (jugadores) { for (int i=0;i<numJugadores;++i) delete jugadores[i]; delete[] jugadores; jugadores=nullptr; }
+    jugadores = new Jugador*[nj];
+    numJugadores = nj;
+    for (int i = 0; i < nj; ++i) {
+        if (!std::getline(in, linea)) return false;
+        Jugador* j = new Jugador("");
+        if (!j->deserializar(linea)) { delete j; return false; }
+        jugadores[i] = j;
+    }
+
+    return true;
 }
