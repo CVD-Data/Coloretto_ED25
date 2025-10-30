@@ -47,11 +47,6 @@ void Juego::prepararMazoSegunModo() {
     std::shuffle(mazo->begin(), mazo->end(), std::default_random_engine(seed));
 }
 
-// void Juego::insertarUltimaRondaSegunModo() {
-//     // Ahora esta función no inserta la carta al inicio. La lógica para añadir la carta de última
-//     // ronda ocurre dinámicamente durante el juego cuando queden exactamente 5 cartas en el mazo.
-// }
-
 void Juego::inicializarPartida(const std::vector<std::string>& nombres) {
     limpiar_memoria();
     numJugadores = (int)nombres.size();
@@ -67,7 +62,7 @@ void Juego::inicializarPartida(const std::vector<std::string>& nombres) {
 
 void Juego::mostrarInstrucciones() const {
     limpiarPantalla();
-    std::cout << "\033[1mINSTRUCCIONES - COLORETTO (CONSOLA)\033[0m\n\n";
+    std::cout << "\033[1mINSTRUCCIONES - COLORETTO V2\033[0m\n\n";
     std::cout << "Reglas principales (versión simplificada):\n";
     std::cout << "- 3 a 5 jugadores. No se muestra la cantidad de cartas del mazo.\n";
     std::cout << "- Hay 3 pilas. Cada pila admite máximo 3 cartas.\n";

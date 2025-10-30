@@ -10,7 +10,7 @@ int main() {
     Juego juego;
     while (true) {
         limpiarPantalla();
-        std::cout << "\033[1;36m=== COLORETTO - Versión Simplificada e Interactiva ===\033[0m\n";
+        std::cout << "\033[1;36m=== COLORETTO - V2 © ===\033[0m\n";
         std::cout << "1) Nueva partida\n2) Cargar partida\n3) Ver instrucciones\n4) Ver tabla de puntos\n5) Salir\nElija una opción: ";
         int opt;
         if (!(std::cin >> opt)) { std::cin.clear(); std::string tmp; std::getline(std::cin, tmp); continue; }
